@@ -1,0 +1,13 @@
+{
+  "name": "electron-mongodb-viewer",
+  "version": "1.0.0",
+  "main": "../partage-machine/index.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^26.0.0",
+    "mongodb": "^5.0.0",
+    "mongoose": "^8.3.5"
+  }
+}

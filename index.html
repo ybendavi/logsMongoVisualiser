@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Logs Viewer</title>
+     <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h1 { text-align: center; }
+    #login { text-align: center; }
+    #logs, #methods { display: none; }
+    #types { list-style: none; padding: 0; margin: 20px 0; display: flex; justify-content: space-around; }
+    #types li { margin: 5px 0; cursor: pointer; padding: 10px; background: #e0e0e0; border-radius: 5px; }
+    #methods { list-style: none; padding: 0; margin: 10px 0; display: none; }
+    #methods li { margin: 5px 0; cursor: pointer; padding: 5px; background: #f0f0f0; border-radius: 5px; }
+    #search-container { margin: 20px 0; text-align: center; }
+    #search { width: 80%; padding: 10px; }
+    #documents { border: 1px solid #ccc; padding: 10px; }
+    .log-summary { cursor: pointer; padding: 10px; margin: 5px 0; background: #f4f4f4; border-radius: 5px; }
+    .log-details { display: none; margin-left: 20px; }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <h1>Logs Viewer - Connexion</h1>
+    <input type="text" id="dbAddress" placeholder="Adresse IP de la base de données" /><br/><br/>
+    <input type="text" id="dbUsername" placeholder="Nom d'utilisateur" /><br/><br/>
+    <input type="password" id="dbPassword" placeholder="Mot de passe" /><br/><br/>
+	<input type="text" id="dbName" placeholder="Nom de la db" /><br/><br/>
+	<input type="text" id="dbPort" placeholder="Port" /><br/><br/>
+    <input type="text" id="authSource" placeholder="Nom de la db d'authentification" /><br/><br/>
+    <button onclick="connectToDatabase()">Se connecter</button>
+    <div id="error" style="color: red; display: none;"></div>
+  </div>
+
+  <div id="logs">
+    <h1>Logs Viewer</h1>
+    <ul id="types">
+      <li onclick="filterLogs('uncaughtException')">uncaughtException</li>
+      <li onclick="filterLogs('unhandledRejection')">unhandledRejection</li>
+      <li onclick="filterLogs('exit')">exit</li>
+      <li onclick="filterLogs('warning')">warning</li>
+      <li onclick="filterLogs('multipleResolves')">multipleResolves</li>
+      <li onclick="filterLogs('signal')">signals</li>
+      <li onclick="filterLogs('')">all</li>
+      <li onclick="toggleHttpMethods()">http</li>
+    </ul>
+    <ul id="methods">
+      <li onclick="filterLogs('http', 'GET')">GET</li>
+      <li onclick="filterLogs('http', 'POST')">POST</li>
+      <li onclick="filterLogs('http', 'PUT')">PUT</li>
+      <li onclick="filterLogs('http', 'DELETE')">DELETE</li>
+      <li onclick="filterLogs('http', 'CONNECT')">CONNECT</li>
+      <li onclick="filterLogs('http', 'OPTIONS')">OPTIONS</li>
+      <li onclick="filterLogs('http', 'TRACE')">TRACE</li>
+      <li onclick="filterLogs('http', 'PATCH')">PATCH</li>
+    </ul>
+    <div id="search-container">
+      <input type="text" id="search" placeholder="Rechercher dans la collection..." oninput="filterDisplayedLogs()" />
+    </div>
+    <div id="documents"></div>
+  </div>
+
+  <script>
+const { ipcRenderer } = require('electron');
+
+    function connectToDatabase() {
+      const address = document.getElementById('dbAddress').value;
+      const username = document.getElementById('dbUsername').value;
+      const password = document.getElementById('dbPassword').value;
+      const dbName = document.getElementById('dbName').value;
+      const authSource = document.getElementById('authSource').value;
+      const dbPort = document.getElementById('dbPort').value;
+
+      ipcRenderer.invoke('connect-to-db', { address, username, password, dbName, authSource}).then(response => {
+        if (response.success) {
+	//²loadCollections();
+	setupSearch();
+          document.getElementById('login').style.display = 'none';
+          document.getElementById('logs').style.display = 'block';
+          loadLogs();
+        } else {
+          document.getElementById('error').style.display = 'block';
+          document.getElementById('error').textContent = 'Erreur de connexion : ' + response.message;
+        }
+      }).catch(error => {
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = 'Erreur de connexion : ' + error.message;
+      });
+    }
+
+    function loadCollections() {
+      ipcRenderer.invoke('get-collections').then(collections => {
+        const collectionsList = document.getElementById('collections');
+        collectionsList.innerHTML = '';
+        collections.forEach(collection => {
+          const li = document.createElement('li');
+          li.textContent = collection.name;
+          li.onclick = () => {
+            document.getElementById('search').dataset.collection = collection.name;
+            loadDocuments(collection.name);
+          };
+          collectionsList.appendChild(li);
+        });
+      }).catch(error => console.error('Error loading collections:', error));
+    }
+
+    function loadDocuments(collectionName, query = {}) {
+      ipcRenderer.invoke('get-documents', { collectionName, query }).then(documents => {
+        const documentsDiv = document.getElementById('documents');
+        documentsDiv.innerHTML = `<h2>${collectionName}</h2>`;
+        documents.forEach(doc => {
+          const pre = document.createElement('pre');
+          pre.textContent = JSON.stringify(doc, null, 2);
+          documentsDiv.appendChild(pre);
+        });
+      }).catch(error => console.error('Error loading documents:', error));
+    }
+
+    function loadLogs(query = {}) {
+	    if (!(query.type))
+		    query = null;
+      ipcRenderer.invoke('get-logs', { query }).then(logs => {
+	      displayLogs(logs);
+      }).catch(error => console.error('Error loading logs:', error));
+    }
+
+
+    function displayLogs(logs) {
+      const documentsDiv = document.getElementById('documents');
+      documentsDiv.innerHTML = '<h2>Logs</h2>';
+
+	console.log("logs:", logs);
+      logs.forEach(log => {
+	const	timestamp = log._doc.timestamp;
+	      console.log(timestamp);
+	const date = new Date(log._doc.timestamp);
+	      console.log(date);
+	      
+        const logSummary = document.createElement('div');
+        logSummary.className = 'log-summary';
+        logSummary.innerHTML = `
+		      <strong>Date:</strong> ${date.toString()} |
+          <strong>Type:</strong> ${log._doc.type} |
+          <strong>Method:</strong> ${log._doc.method || 'No method'} |
+          <strong>Error:</strong> ${log._doc.error || 'No error'}
+          <strong>Ip:</strong> ${log._doc.ip || 'No IP'}
+        `;
+
+        const logDetails = document.createElement('div');
+        logDetails.className = 'log-details';
+        logDetails.textContent = JSON.stringify(log._doc, null, 2);
+
+        logSummary.onclick = () => {
+          logDetails.style.display = logDetails.style.display === 'none' ? 'block' : 'none';
+        };
+
+        documentsDiv.appendChild(logSummary);
+        documentsDiv.appendChild(logDetails);
+      });
+    }
+
+    function filterLogs(type, method) {
+      const methodsList = document.getElementById('methods');
+	methodsList.style.display = 'none';
+      const query = { type };
+      if (method) {
+        query.method = method;
+      }
+      loadLogs(query);
+    }
+
+    function toggleHttpMethods() {
+      const methodsList = document.getElementById('methods');
+	    filterLogs("http", null); 
+      if (methodsList.style.display === 'none' || methodsList.style.display === '') {
+        methodsList.style.display = 'block';
+      } else {
+        methodsList.style.display = 'none';
+      }
+    }
+
+    function setupSearch() {
+      const searchInput = document.getElementById('search');
+      searchInput.oninput = () => {
+        const query = searchInput.value;
+	      const searchQuery = {};
+	      searchQuery.$and = [
+		      {$or: [{ url: { "$regex": query, "$options": "i"}},
+			      { type: { "$regex": query, "$options": "i"}},
+			      { method: { "$regex": query, "$options": "i"}},
+			      { ip: { "$regex": query, "$options": "i"}},
+			      { httpversion: { "$regex": query, "$options": "i"}},
+			      { statutcode: { "$regex": query, "$options": "i"}},
+			      { error: { "$regex": query, "$options": "i"}},
+			      { message: { "$regex": query, "$options": "i"}}]}
+		];
+
+          loadLogs(searchQuery);
+      };
+    }
+
+    window.onload = () => {
+    };
+  </script>
+</body>
+</html>
+
